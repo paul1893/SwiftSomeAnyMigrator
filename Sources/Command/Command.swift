@@ -2,23 +2,7 @@ import Foundation
 import ArgumentParser
 import SwiftParser
 
-enum Metadata {
-    static var policy = Policy.strict
-    static var conservative = false
-}
-
-public enum Policy: String, ExpressibleByArgument {
-    case strict, light
-
-    public init?(argument: String) {
-        if let policy = Policy(rawValue: argument) {
-            self = policy
-        } else {
-            return nil
-        }
-    }
-}
-public struct SwiftSomeAnyMigratorCommand: AsyncParsableCommand {
+public struct Command: AsyncParsableCommand {
     public static let configuration = CommandConfiguration(
         abstract: "A Swift command-line tool to add `any` and/or `some` keywords at needed locations in your codebase for Swift 6 compatibility",
         subcommands: []
@@ -55,23 +39,67 @@ public struct SwiftSomeAnyMigratorCommand: AsyncParsableCommand {
             ignoringFolders: ignoreFolders
         )
     }
+}
 
+extension Command {
     private func processDirectory(at path: String, ignoringFolders: [String]) async {
         print("📦 Preparing ...")
         let directoryURL = URL(fileURLWithPath: path)
+        
+        print("📦 Collecting protocol types ...")
+        await iterate(through: directoryURL, ignoringFolders: ignoringFolders) { fileURL in
+                let sourceText = try String(contentsOf: fileURL)
+                let sourceFile = Parser.parse(source: sourceText)
+                let visitor = ProtocolVisitor(viewMode: .sourceAccurate)
+                visitor.walk(sourceFile)
+            }
 
+        print("📦 Migration ...")
+        var start: CFAbsoluteTime?
+        await iterate(
+            through: directoryURL,
+            ignoringFolders: ignoringFolders,
+            willStart: {
+                if start == nil {
+                    start = CFAbsoluteTimeGetCurrent()
+                }
+            }) { fileURL in
+                print("✅ Updating \(fileURL.lastPathComponent)")
+                let sourceText = try String(contentsOf: fileURL)
+                let sourceFile = Parser.parse(source: sourceText)
+                
+                let modifiedSource = MyRewriter().visit(sourceFile)
+                
+                try modifiedSource
+                    .description
+                    .write(to: fileURL, atomically: true, encoding: .utf8)
+            }
+        if let start {
+            let end = CFAbsoluteTimeGetCurrent()
+            print("✅ Complete in \(end - start) sec.")
+        }
+    }
+    
+    private func iterate(
+        through directoryURL: URL,
+        ignoringFolders: [String],
+        willStart: (() -> Void)? = nil,
+        perform: @escaping (URL) throws -> Void
+    ) async {
         let fileManager = FileManager.default
         let options: FileManager.DirectoryEnumerationOptions = [
             .skipsHiddenFiles,
             .skipsPackageDescendants
         ]
-
-        print("📦 Looking for files ...")
-        var start: CFAbsoluteTime?
+        
         await withThrowingTaskGroup(of: Void.self) { group in
-            if let enumerator = fileManager.enumerator(at: directoryURL, includingPropertiesForKeys: nil, options: options) {
+            if let enumerator = fileManager.enumerator(
+                at: directoryURL,
+                includingPropertiesForKeys: nil,
+                options: options
+            ) {
+                willStart?()
                 for case let fileURL as URL in enumerator {
-                    if start == nil { start = CFAbsoluteTimeGetCurrent() }
                     group.addTask {
                         do {
                             if fileURL.hasDirectoryPath {
@@ -80,39 +108,25 @@ public struct SwiftSomeAnyMigratorCommand: AsyncParsableCommand {
                             let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
                             if resourceValues.isDirectory == true {
                                 if ignoringFolders.contains(fileURL.lastPathComponent) {
-                                    enumerator.skipDescendants() // Skip this directory and its subdirectories
+                                    // Skip this directory and its subdirectories
+                                    enumerator.skipDescendants()
                                     return
                                 }
                             }
                             // Check if the file is a Swift file
                             try Task.checkCancellation()
                             if fileURL.path.hasSuffix(".swift") {
-                                print("✅ Updating \(fileURL.lastPathComponent)")
-                                let sourceText = try String(contentsOf: fileURL)
-                                let sourceFile = Parser.parse(source: sourceText)
-
-                                var modifiedSource = sourceFile
-                                let variableRewriter = GlobalVariableProtocolRewriter()
-                                modifiedSource = variableRewriter.visit(modifiedSource)
-                                let constructorRewriter = InitializerProtocolRewriter()
-                                modifiedSource = constructorRewriter.visit(modifiedSource)
-
-                                try modifiedSource
-                                    .description
-                                    .write(to: fileURL, atomically: true, encoding: .utf8)
+                                try perform(fileURL)
                             }
                         } catch {
-                            print("Error reading contents of directory \(fileURL.path): \(error)")
+                            print(
+                                "Error reading contents of directory \(fileURL.path): \(error)"
+                            )
                             return
                         }
                     }
                 }
             }
         }
-        if let start {
-            let end = CFAbsoluteTimeGetCurrent()
-            print("✅ Complete in \(end - start) sec.")
-        }
     }
-
 }

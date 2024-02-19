@@ -19,9 +19,9 @@ let package = Package(
   ],
   targets: [
     .executableTarget(
-        name: "SwiftSomeAnyMigratorCommandLineTool",
+        name: "CommandLineTool",
         dependencies: ["SwiftSomeAnyMigrator"],
-        path: "Sources/SwiftSomeAnyMigratorCommandLineTool"
+        path: "Sources/CommandLineTool"
     ),
     .target(
         name: "SwiftSomeAnyMigrator",
@@ -31,7 +31,7 @@ let package = Package(
             .product(name: "SwiftParser", package: "swift-syntax"),
             .product(name: "ArgumentParser", package: "swift-argument-parser"),
         ],
-        path: "Sources/SwiftSomeAnyMigrator"
+        path: "Sources/Command"
     ),
     .testTarget(
         name: "SwiftSomeAnyMigratorTests",
