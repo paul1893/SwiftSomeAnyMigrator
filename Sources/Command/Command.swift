@@ -48,11 +48,14 @@ extension Command {
         
         print("📦 Collecting protocol types ...")
         await iterate(through: directoryURL, ignoringFolders: ignoringFolders) { fileURL in
-                let sourceText = try String(contentsOf: fileURL)
-                let sourceFile = Parser.parse(source: sourceText)
-                let visitor = ProtocolVisitor(viewMode: .sourceAccurate)
-                visitor.walk(sourceFile)
+            let sourceText = try String(contentsOf: fileURL)
+            let sourceFile = Parser.parse(source: sourceText)
+            let visitor = ProtocolVisitor(viewMode: .sourceAccurate) { node in
+                // Collect protocol
+                Collector.shared.insert(node)
             }
+            visitor.walk(sourceFile)
+        }
 
         print("📦 Migration ...")
         var start: CFAbsoluteTime?

@@ -20,7 +20,7 @@ extension TypeSyntax {
 
 extension String {
     var isProtocolName: Bool {
-        return Collector.protocols.contains(where: {
+        return Collector.shared.protocols.contains(where: {
             $0.trimmedDescription == self
         })
     }

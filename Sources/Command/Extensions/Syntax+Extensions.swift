@@ -123,9 +123,31 @@ extension TupleTypeElementListSyntax {
     }
 }
 
+extension Syntax {
+    func containsParent<S: SyntaxProtocol>(_ syntaxType: S.Type) -> Bool {
+        guard let parent else {
+            return false
+        }
+        if parent.is(syntaxType) {
+            return true
+        } else {
+            return parent.containsParent(syntaxType)
+        }
+
+    }
+}
+
 extension ReturnClauseSyntax {
     func applySomeOrAny(for policy: Policy) -> Self {
-        let keyword: Keyword = policy == .strict ? .some : .any
+        let isParentAProtocol = parent?.containsParent(ProtocolDeclSyntax.self) == true
+        let keyword: Keyword = if isParentAProtocol {
+            .any
+        } else if policy == .strict {
+            .some
+        } else {
+            .any
+        }
+
         return self.with(
             \.type,
              self.type.apply(keyword)

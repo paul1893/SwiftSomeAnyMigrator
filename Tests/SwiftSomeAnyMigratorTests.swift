@@ -8,9 +8,10 @@ final class SwiftSomeAnyMigratorTests: XCTestCase {
     override func setUp() {
         Metadata.policy = .strict
         Metadata.conservative = false
-        Collector.protocols = Set(["FooProtocol", "BarProtocol", "Error"].map {
-            TokenSyntax.identifier($0)
-        })
+        ["FooProtocol", "BarProtocol", "Error"].forEach {
+            let token = TokenSyntax.identifier($0)
+            Collector.shared.insert(token)
+        }
     }
     
     func test_variable_rewriter_with_excluded_named() throws {
@@ -580,6 +581,7 @@ final class SwiftSomeAnyMigratorTests: XCTestCase {
         )
     }
     
+    // TODO PBA
     func test_function_rewriter_when_conservative() throws {
         // GIVEN
         Metadata.conservative = true
@@ -589,7 +591,7 @@ final class SwiftSomeAnyMigratorTests: XCTestCase {
                 a: any FooProtocol,
                 b: any BarProtocol?,
                 c: any BarProtocol? = Services.shared.bar
-            ) {
+            ) -> (any Error)? {
             }
          }
         """
@@ -607,7 +609,7 @@ final class SwiftSomeAnyMigratorTests: XCTestCase {
                     a: any FooProtocol,
                     b: any BarProtocol?,
                     c: any BarProtocol? = Services.shared.bar
-                ) {
+                ) -> (any Error)? {
                 }
              }
             """
@@ -714,7 +716,7 @@ final class SwiftSomeAnyMigratorTests: XCTestCase {
         )
     }
     
-    func test_function_rewriter_with_return_type() throws {
+    func test_function_rewriter_with_return_clause() throws {
         // GIVEN
         let source = """
          final class FooClass {
@@ -736,8 +738,8 @@ final class SwiftSomeAnyMigratorTests: XCTestCase {
             """
         )
     }
-    
-    func test_function_rewriter_with_return_optional_type() throws {
+
+    func test_function_rewriter_with_return_optional_clause() throws {
         // GIVEN
         let source = """
          final class FooClass {
@@ -760,6 +762,53 @@ final class SwiftSomeAnyMigratorTests: XCTestCase {
         )
     }
     
+    func test_function_rewriter_with_return_clause_that_are_already_any() throws {
+        // GIVEN
+        let source = """
+         final class FooClass {
+            func foo() -> (any FooProtocol)? {}
+         }
+        """
+
+        // WHEN
+        let rewriter = MyRewriter()
+        let result = rewriter.visit(Parser.parse(source: source))
+
+        // THEN
+        XCTAssertEqual(
+            result.description,
+            """
+             final class FooClass {
+                func foo() -> (any FooProtocol)? {}
+             }
+            """
+        )
+    }
+
+    // TODO PBA
+    func test_function_rewriter_with_return_clause_in_protocol_should_always_be_any() throws {
+        // GIVEN
+        let source = """
+         protocol FooProtocol {
+            func foo() -> BarProtocol {}
+         }
+        """
+
+        // WHEN
+        let rewriter = MyRewriter()
+        let result = rewriter.visit(Parser.parse(source: source))
+
+        // THEN
+        XCTAssertEqual(
+            result.description,
+            """
+             protocol FooProtocol {
+                func foo() -> any BarProtocol {}
+             }
+            """
+        )
+    }
+
     func test_function_body_rewriter() throws {
         // GIVEN
         let source = """
